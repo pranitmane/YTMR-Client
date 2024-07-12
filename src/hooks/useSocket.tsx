@@ -3,7 +3,25 @@ import { useState, useEffect, useCallback } from 'react';
 export default function useSocket(url: string) {
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [streamData, setStreamData] = useState<responseStream>({
+        type: "status",
+        data: {
+            title: "",
+            url: "",
+            isPlaying: "nothing"
+        },
+        message: ""
+    });
+
+    type responseStream = {
+        type: "status",
+        data: {
+            title: string,
+            url: string,
+            isPlaying: "playing" | "paused" | "loading" | "nothing"
+        },
+        message: string
+    };
 
     const connect = useCallback(() => {
         let newSocket: WebSocket;
@@ -12,32 +30,40 @@ export default function useSocket(url: string) {
             newSocket = new WebSocket(url);
         } catch (e) {
             console.error('Failed to create WebSocket:', e);
-            setError('Failed to create WebSocket connection');
-            return () => {};
+            return () => { };
         }
 
         newSocket.onopen = () => {
             console.log('WebSocket connection established.');
             setIsConnected(true);
-            setError(null);
         };
 
         newSocket.onclose = (event) => {
             console.error(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`);
             setIsConnected(false);
-            setError(`Connection closed (${event.code})`);
             setTimeout(connect, 5000);
         };
 
         newSocket.onerror = (error) => {
             console.error('WebSocket error:', error);
             setIsConnected(false);
-            setError('WebSocket error occurred');
         };
 
         newSocket.onmessage = (event) => {
-            console.log('Received message:', event.data);
-            // Handle incoming messages here
+            try {
+                console.log('WebSocket message received:', event.data);
+                let jsonData = JSON.parse(event.data);
+                if (jsonData.type === "status") {
+                    if (jsonData.data.title === "YouTube Music") {
+                        jsonData.data.title = "No media playing";
+                    }
+                    setStreamData(jsonData);
+                } else if(jsonData.type ==="init"){
+                    setStreamData(jsonData);
+                }
+            } catch (e) {
+                console.error('Failed to parse message:', e);
+            }
         };
 
         setSocket(newSocket);
@@ -57,9 +83,8 @@ export default function useSocket(url: string) {
             socket.send(JSON.stringify({ type: "command", data: { command: command }, message: "from client" }));
         } else {
             console.error('WebSocket is not connected.');
-            setError('Cannot send message: WebSocket is not connected');
         }
     }, [socket]);
 
-    return { isConnected, sendCommand, error } as const;
+    return { isConnected, sendCommand, streamData,socket} as const;
 }
